@@ -18,15 +18,8 @@ GET = 'GET'
 PUT = 'PUT'
 PATCH = 'PATCH'
 DELETE = 'DELETE'
-EXTRA_HEADERS = {'Access-Control-Allow-Origin': '*'}
+DEFAULT_HEADERS = {'Access-Control-Allow-Origin': '*'}
 CHUNK_SIZE = 2048
-
-
-async def _coroutine_func():
-    pass
-_coroutine_generator = type(_coroutine_func())
-def iscoroutine_generator(m):
-    return isinstance(m, _coroutine_generator)
 
 
 def web_page(msg):
@@ -35,10 +28,10 @@ def web_page(msg):
     yield '</p></body></html>'
 
 
-def response(status, content_type, payload, extra_headers=EXTRA_HEADERS):
+def response(status, content_type, payload, headers=DEFAULT_HEADERS):
     yield 'HTTP/1.1 {} {}\n'.format(status, STATUS_CODES[status])
     yield 'Content-Type: {}\n'.format(content_type)
-    for k,v in extra_headers.items():
+    for k,v in headers.items():
         yield k
         yield ': '
         yield v
@@ -50,15 +43,6 @@ def response(status, content_type, payload, extra_headers=EXTRA_HEADERS):
 def redirect(location, status=302):
     yield 'HTTP/1.1 {} {}\n'.format(status, STATUS_CODES[status])
     yield 'Location: {}\n'.format(location)
-
-
-def extract_json(payload, auth_token):
-    log.garbage_collect()
-    log.debug('payload={payload}', payload=payload)
-    msg = ujson.loads(payload)
-    if msg.get('auth_token') != auth_token:
-        raise UnauthorizedError('Unauthorized. Send {"auth_token":"<secret>", "payload": ...}')
-    return msg['payload']
 
 
 def jsondumps(o, depth=1):
@@ -177,10 +161,6 @@ def file_exists(path):
         return False
 
 
-class UnauthorizedError(Exception):
-    pass
-
-
 class StopWebServer(Exception):
     pass
 
@@ -188,6 +168,10 @@ class StopWebServer(Exception):
 class HTTPException(Exception):
     def __init__(self, code=400):
         self.code = code
+
+
+class UnauthorizedError(HTTPException):
+    pass
 
 
 class Request:
@@ -200,6 +184,7 @@ class Request:
         self.path = ''
         self.query_string = ''
         self.max_body_size = CHUNK_SIZE
+        self.payload = None
 
     async def read_request_line(self):
         while True:
@@ -235,7 +220,6 @@ class Request:
             self._headers_read = True
         return self.headers
 
-    payload = None
     async def read_payload(self):
         if self.payload is None:
             self.payload = await self._read_payload()
@@ -278,6 +262,7 @@ class Response:
     async def send(self, resp_gen):
         self.began = True
         await self._send_response(resp_gen)
+        await self.writer.drain()
 
     async def _send_response(self, resp_gen):
         if isinstance(resp_gen, (str, bytes)):
@@ -285,8 +270,6 @@ class Response:
                 self.writer.write(resp_gen)
                 return len(resp_gen)
             return 0
-        #elif iscoroutine_generator(resp_gen):
-        #    return await self._send_response(await resp_gen)
         else:
             count = 0
             for l in resp_gen:
@@ -310,17 +293,15 @@ class Server:
         # Base class to later do @app.json() or @app.html() decorations
         _endpoints = {}
         def __init__(self, path=None,
-                           response_builder=None,
-                           extra_headers=EXTRA_HEADERS,
-                           authenticated_methods=DEFAULT_AUTHENTICATED_METHODS,
+                           headers=DEFAULT_HEADERS,
+                           authenticated=DEFAULT_AUTHENTICATED_METHODS,
                            **kwargs):
             self.path = path
             self.kwargs = dict(
-                    extra_headers=extra_headers,
-                    response_builder=response_builder or response,
+                    headers=headers,
                     endpoint_type=self.__class__,
                     content_type=self.content_type,
-                    authenticated_methods=authenticated_methods,
+                    authenticated=authenticated,
                     **kwargs
                     )
         def __call__(self, method):
@@ -331,19 +312,17 @@ class Server:
     class json(_decorator):
         content_type = 'application/json'
         def __init__(self, path=None,
-                           response_builder=None,
-                           extra_headers=EXTRA_HEADERS,
-                           authenticated_methods=DEFAULT_AUTHENTICATED_METHODS,
+                           headers=DEFAULT_HEADERS,
+                           authenticated=DEFAULT_AUTHENTICATED_METHODS,
                            json_resp=True,
                            json_depth=0,
                            **kwargs
                            ):
             super().__init__(path=path,
-                             response_builder=response_builder,
-                             extra_headers=extra_headers,
+                             headers=headers,
                              json_resp=json_resp,
                              json_depth=json_depth,
-                             authenticated_methods=authenticated_methods,
+                             authenticated=authenticated,
                              **kwargs
                              )
 
@@ -353,7 +332,7 @@ class Server:
     class plain(_decorator):
         content_type = 'text/plain'
 
-    def _default_method(self, v,req,**params):
+    async def _default_method(self, v,req,**params):
         return 'Not Found\n{}\n{}\n{}'.format(v, req, params)
 
     static_path = None
@@ -381,8 +360,7 @@ class Server:
                                      kwargs=dict(
                                          endpoint_type='default',
                                          content_type='text/plain',
-                                         extra_headers=EXTRA_HEADERS,
-                                         response_builder=response,
+                                         headers=DEFAULT_HEADERS,
                                          status=404,
                                      ))
 
@@ -410,6 +388,8 @@ class Server:
                     await resp.send(resp_gen)
             except UnauthorizedError as e:
                 await resp.send_error(401, 'text/html', web_page('{} {!r}'.format(e,e)))
+            except HTTPException as e:
+                await resp.send_error(e.code, 'text/html', web_page('{} {!r}'.format(e,e)))
         except StopWebServer:
             raise
         except Exception as e:
@@ -450,22 +430,17 @@ class Server:
         else:
             req_payload = await req.read_payload() 
             params = req.get_params()
-            if req.method in kwargs.get('authenticated_methods', tuple()):
+            if req.method in kwargs.get('authenticated', tuple()):
                 if (req_payload or params).get('auth_token') != self.auth_token:
                     raise UnauthorizedError('Unauthorized. Send {"auth_token":"<secret>", "payload": ...}')
                 req_payload = req_payload['payload']
-            resp_payload = endpoint['callback'](req.method, req_payload, **params)
+            resp_payload = await endpoint['callback'](req.method, req_payload, **params)
             if kwargs.get('json_resp'):
-                resp_payload = await self.json_dump(resp_payload, kwargs.get('json_depth', 0))
-            response_builder = kwargs['response_builder']
-            return response_builder(kwargs.get('status', 200),
-                                    kwargs['content_type'],
-                                    resp_payload,
-                                    extra_headers=kwargs['extra_headers'])
+                resp_payload = jsondumps(resp_payload, kwargs.get('json_depth', 0))
+            return response(kwargs.get('status', 200),
+                            kwargs['content_type'],
+                            resp_payload,
+                            headers=kwargs['headers'])
 
-    async def json_dump(self, obj, depth=1):
-        if iscoroutine_generator(obj):
-            obj = await obj
-        return jsondumps(obj, depth)
 
 

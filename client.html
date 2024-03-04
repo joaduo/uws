@@ -43,7 +43,7 @@
         return json
     }
 
-    async function postJSON(endpoint, payload){
+    async function postJSON(endpoint, payload, auth_token){
         let url = host + '/' + endpoint;
         let data = {"auth_token": auth_token, "payload":payload}
         let headers =  {
@@ -63,14 +63,21 @@
     createApp({
       status: {name:''},
       log_level: '',
+      token: auth_token,
+      new_token: '',
+      async setToken(){
+        await postJSON('token', this.new_token, this.token)
+        this.token = this.new_token
+        this.new_token = ''
+      },
       async setLevel(){
-        this.log_level = await postJSON('log_level', this.log_level)
+        this.log_level = await postJSON('log_level', this.log_level, this.token)
       },
       async getLevel(){
         this.log_level = await getJSON('log_level')
       },
       async setStatus(){
-        this.status = await postJSON('status', this.status)
+        this.status = await postJSON('status', this.status, this.token)
       },
       async getStatus(){
         this.status = await getJSON('status')
@@ -93,6 +100,12 @@
       <input type='text' id='log_level' v-model='log_level'/> Log Level
       <button id='log_level1'  class='btn' @click='getLevel()'>Get</button>
       <button id='log_level2'  class='btn btn_stop' @click='setLevel()'>Set</button>
+    </p>
+    <hr/>
+    <p>
+      <input type='text' id='token' v-model='token'/> Token
+      <input type='text' id='new_token' v-model='new_token'/> Token
+      <button id='token1'  class='btn btn_stop' @click='setToken()'>Set</button>
     </p>
   </div>
 

@@ -14,8 +14,15 @@ async def blink():
 AUTH_TOKEN='MYTOKEN'
 
 app = Server(static_path='/static/',
-                 auth_token=AUTH_TOKEN,
-                 pre_request_hook=lambda: uasyncio.create_task(blink()))
+             auth_token=AUTH_TOKEN,
+             pre_request_hook=lambda: uasyncio.create_task(blink()))
+
+
+@app.json()
+async def token(method, new_token, **params):
+    if method == POST:
+        app.auth_token = new_token
+    return ''
 
 
 @app.json()
@@ -27,7 +34,7 @@ async def log_level(method, level):
 
 _status = dict(name='hello')
 @app.json()
-async def status(method, payload):
+async def status(method, payload, **params):
     if method == POST:
         log.info(payload)
         _status.update(payload)
@@ -35,8 +42,8 @@ async def status(method, payload):
 
 
 @app.html('/')
-def index(method, _):
-    return serve_file('/client.html', {'@=AUTH_TOKEN=@':AUTH_TOKEN,
+async def index(method, _):
+    return serve_file('/client.html', {'@=AUTH_TOKEN=@':'MYTOKEN',
                                        '@=SERVER_ADDRESS=@':'',})
 
 
