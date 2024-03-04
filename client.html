@@ -1,0 +1,104 @@
+<html>
+<meta name='viewport' content='width=device-width, initial-scale=1.0'>
+
+<title>uws Demo</title>
+
+
+<style>
+.btn {
+  background-color: #4CAF50; /* Green */
+  border: none;
+  color: white;
+  padding: 15px 32px;
+  text-align: center;
+  text-decoration: none;
+  display: inline-block;
+  font-size: 16px;
+}
+.btn2 {background-color: #008CBA;} /* Blue */
+.btn_stop {background-color: #d66;} /* Red */
+.btn_status {background-color: #666;} /* Gray */
+
+</style>
+
+<body>
+
+  <script type="module">
+    import { createApp } from '/static/petite-vue-module.min.js'
+    var host = '@=SERVER_ADDRESS=@'
+    var auth_token = '@=AUTH_TOKEN=@'
+
+    async function getJSON(endpoint){
+        let url = host + '/' + endpoint;
+        let headers =  {
+            'Content-Type': 'application/json'
+        };
+        let request = {
+            method:"GET",
+            headers
+        };
+        let page = await fetch(url,request);
+        let json = await page.json();
+        console.log(json);
+        return json
+    }
+
+    async function postJSON(endpoint, payload){
+        let url = host + '/' + endpoint;
+        let data = {"auth_token": auth_token, "payload":payload}
+        let headers =  {
+            'Content-Type': 'application/json'
+        };
+        let request = {
+            method:"POST",
+            body:JSON.stringify(data),
+            headers
+        };
+        let page = await fetch(url,request);
+        let json = await page.json();
+        console.log(json);
+        return json
+    }
+
+    createApp({
+      status: {name:''},
+      log_level: '',
+      async setLevel(){
+        this.log_level = await postJSON('log_level', this.log_level)
+      },
+      async getLevel(){
+        this.log_level = await getJSON('log_level')
+      },
+      async setStatus(){
+        this.status = await postJSON('status', this.status)
+      },
+      async getStatus(){
+        this.status = await getJSON('status')
+      },
+      async mounted(){
+        await this.getStatus()
+        await this.getLevel()
+      },
+    }).mount()
+  </script>
+
+  <div v-scope @vue:mounted='mounted'>
+    <p>
+      <input type='text' id='name' v-model='status.name'/> Status Name
+      <button id='name1'  class='btn' @click='getStatus()'>Get</button>
+      <button id='name2'  class='btn btn_stop' @click='setStatus()'>Set</button>
+    </p>
+    <hr/>
+    <p>
+      <input type='text' id='log_level' v-model='log_level'/> Log Level
+      <button id='log_level1'  class='btn' @click='getLevel()'>Get</button>
+      <button id='log_level2'  class='btn btn_stop' @click='setLevel()'>Set</button>
+    </p>
+  </div>
+
+</body>
+
+
+
+</html>
+
