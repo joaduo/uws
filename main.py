@@ -19,7 +19,7 @@ app = Server(static_path='/static/',
 
 
 @app.json()
-async def token(method, new_token, **params):
+async def token(method, new_token):
     if method == POST:
         app.auth_token = new_token
     return ''
@@ -34,7 +34,7 @@ async def log_level(method, level):
 
 _status = dict(name='hello')
 @app.json()
-async def status(method, payload, **params):
+async def status(method, payload):
     if method == POST:
         log.info(payload)
         _status.update(payload)
