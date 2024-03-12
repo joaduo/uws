@@ -1,8 +1,9 @@
-from uws import Plugin, POST
+from uws import Plugin, POST, only_get
 import log
 
 
 log_plugin = Plugin()
+
 
 @log_plugin.json()
 async def token(method, new_token):
@@ -19,12 +20,14 @@ async def log_level(method, level):
 
 
 @log_plugin.plain()
-async def logs(verb, _):
+@only_get
+async def logs():
     return log.stream_web_log()
 
 
 @log_plugin.plain()
-async def log_freq(verb, _):
+@only_get
+async def log_freq():
     return log.stream_web_log_frequency()
 
 

@@ -1,0 +1,119 @@
+    <script type="module">
+    import { createApp } from '/static/petite-vue-module.min.js'
+
+    async function getJSON(endpoint){
+        let url = host + '/' + endpoint;
+        let headers =  {
+            'Content-Type': 'application/json'
+        };
+        let request = {
+            method:"GET",
+            headers
+        };
+        let page = await fetch(url,request);
+        let json = await page.json();
+        console.log(json);
+        return json
+    }
+
+    async function postJSON(endpoint, payload, auth_token){
+        let url = host + '/' + endpoint;
+        let data = {"auth_token": auth_token, "payload":payload}
+        let headers =  {
+            'Content-Type': 'application/json'
+        };
+        let request = {
+            method:"POST",
+            body:JSON.stringify(data),
+            headers
+        };
+        let page = await fetch(url,request);
+        let json = await page.json();
+        console.log(json);
+        return json
+    }
+
+    async function getAPIText(endpoint){
+        let url = host + '/' + endpoint;
+        let headers =  {
+            'Content-type': 'text/plain'
+        };
+        let request = {
+            method:'GET',
+            headers
+        };
+        let page = await fetch(url, request);
+        return await page.text();
+    }
+
+    createApp({
+      log_level: '',
+      token: auth_token,
+      new_token: '',
+      logCfg: {},
+      logHistory: '',
+      webLogFrequency: '',
+      async setToken(){
+        await postJSON('token', this.new_token, this.token)
+        this.token = this.new_token
+        this.new_token = ''
+      },
+      async setLevel(){
+        this.log_level = await postJSON('log_level', this.log_level, this.token)
+      },
+      async getLevel(){
+        this.log_level = await getJSON('log_level')
+      },
+      async setLogCfg(){
+        this.getLogCfg(await postJSON('logcfg', this.logCfg, this.token))
+      },
+      async getLogHistory(){
+        this.logHistory = await getAPIText('logs')
+        this.webLogFrequency = await getAPIText('log_freq')
+      },
+      async getLogCfg(cfg){
+        if(!cfg)
+            cfg = await getJSON('logcfg')
+        this.logCfg = cfg
+      },
+      async mounted(){
+        await this.getLevel()
+        await this.getLogCfg()
+      },
+    }).mount();
+
+
+
+  </script>
+
+  <div v-scope @vue:mounted='mounted'>
+
+    <hr/>
+    <p>
+      <input type='text' id='log_level' v-model='log_level'/> Log Level
+      <button id='log_level1'  class='btn' @click='getLevel()'>Get</button>
+      <button id='log_level2'  class='btn btn_stop' @click='setLevel()'>Set</button>
+    </p>
+    <hr/>
+    <p>
+      <input type='text' id='token' v-model='token'/> Token
+      <input type='text' id='new_token' v-model='new_token'/> New Token
+      <button id='token1'  class='btn btn_stop' @click='setToken()'>Set</button>
+    </p>
+
+    <hr/>
+    <h2>Log Cfg</h2>
+    <p><pre>CRITICAL=50 ERROR=40 WARNING=30 IMPORTANT=25 INFO=20 DEBUG=10</pre></p>
+    <p><input type='number' id='log_level' v-model='logCfg.log_level'/> console log level </p>
+    <p><input type='number' id='web_log_level' v-model='logCfg.web_log_level'/> web log level </p>
+    <p><input type='number' id='web_log_size' v-model='logCfg.web_log_size'/> log size </p>
+    <p><button id='setLogCfg' class='btn btn_stop' @click='setLogCfg()'>Set</button>
+    <button id='getLogCfg' class='btn' @click='getLogCfg()'>Get</button></p>
+    <p/>
+    <hr/>
+    <p><button id='logHistory' class='btn' @click='getLogHistory()'>Get Web Log</button></p>
+    <p><h2 v-if='logHistory'>Latest log</h2></p>
+    <p><pre>{{logHistory}}</pre></p>
+    <p><h2 v-if='webLogFrequency'>Frequency</h2></p>
+    <p><pre>{{webLogFrequency}}</pre></p>
+  </div>

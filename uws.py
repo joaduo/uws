@@ -21,6 +21,15 @@ CHUNK_SIZE = 2048
 DEFAULT_AUTHENTICATED_METHODS = (POST,)
 
 
+def only_get(callback):
+    class wrapper:
+        __name__ = callback.__name__
+        def __call__(self, m, p, **params):
+            assert m == GET
+            return callback(**params)
+    return wrapper()
+
+
 def web_page(msg):
     yield '<html><body><p>'
     yield msg
@@ -28,6 +37,7 @@ def web_page(msg):
 
 
 def response(status, content_type, payload, headers=DEFAULT_HEADERS):
+    log.debug('Sending response...')
     yield 'HTTP/1.1 {} {}\n'.format(status, STATUS_CODES[status])
     yield 'Content-Type: {}\n'.format(content_type)
     for k,v in headers.items():
@@ -98,13 +108,13 @@ def serve_file(path, replacements=None):
     return yield_chunks(path)
 
 
-def yield_chunks(path):
+def yield_chunks(path, size=CHUNK_SIZE):
     with open(path) as fp:
-        chunk = fp.read(CHUNK_SIZE)
+        chunk = fp.read(size)
         while chunk:
             yield chunk
             log.garbage_collect()
-            chunk = fp.read(CHUNK_SIZE)
+            chunk = fp.read(size)
 
 
 def yield_lines(path, replacements):
@@ -294,6 +304,7 @@ class Endpoint:
             content_type='text/html',
             headers=DEFAULT_HEADERS,
             authenticated=DEFAULT_AUTHENTICATED_METHODS,
+            is_async=True,
             **kwargs
             ):
         self.endpoints = endpoints
@@ -302,6 +313,7 @@ class Endpoint:
                     headers=headers,
                     content_type=content_type,
                     authenticated=authenticated,
+                    is_async=is_async,
                     **kwargs
                     )
     def __call__(self, callback):
@@ -324,7 +336,6 @@ class Endpoint:
             return attr(payload, **params)
         return callback
 
-
 class ServerBase:
     def __init__(self):
         self.endpoints = {}
@@ -333,15 +344,19 @@ class ServerBase:
                         content_type=content_type, 
                         **kwargs)
     def json(self, path=None, **kwargs):
+        kwargs.setdefault('json_dumps', True)
         return self.decorate('application/json', path, kwargs)
     def html(self, path=None, **kwargs):
         return self.decorate('text/html', path, kwargs)
     def plain(self, path=None, **kwargs):
         return self.decorate('text/plain', path, kwargs)
+    def javascript(self, path=None, **kwargs):
+        return self.decorate('application/javascript', path, kwargs)
 
 
 class Plugin(ServerBase):
     ...
+
 
 class Server(ServerBase):
     def __init__(self,
@@ -452,8 +467,10 @@ class Server(ServerBase):
                 if (req_payload or params).get('auth_token') != self.auth_token:
                     raise UnauthorizedError('Unauthorized. Send {"auth_token":"<secret>", "payload": ...}')
                 req_payload = req_payload['payload']
-            resp_payload = await endpoint['callback'](req.method, req_payload, **params)
-            if kwargs['content_type'] ==  'application/json':
+            resp_payload = endpoint['callback'](req.method, req_payload, **params)
+            if kwargs.get('is_async'):
+                resp_payload = await resp_payload
+            if kwargs.get('json_dumps'):
                 resp_payload = jsondumps(resp_payload, kwargs.get('json_depth', 0))
             return response(kwargs.get('status', 200),
                             kwargs['content_type'],
