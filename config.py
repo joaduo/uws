@@ -1,5 +1,5 @@
 import log
-import ujson
+import json
 
 DEFAULT_CONFIG_PATH='config.json'
 
@@ -33,13 +33,13 @@ def load(path=DEFAULT_CONFIG_PATH):
     if file_exists(path):
         with open(path) as fp:
             log.debug('loading storage from {}', path)
-            _config_storage = ujson.load(fp)
+            _config_storage = json.load(fp)
     return _config_storage
 
 def dump(path=DEFAULT_CONFIG_PATH):
     with open(path, 'w') as fp:
         log.debug('dumping storage to {}', path)
-        ujson.dump(_config_storage, fp)
+        json.dump(_config_storage, fp)
 
 def file_exists(path):
     try:

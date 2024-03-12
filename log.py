@@ -1,5 +1,6 @@
 import gc
-import utime
+import time
+import sys
 
 
 MEM_FREE_THRESHOLD=20000
@@ -15,6 +16,8 @@ NOTSET = 0
 
 
 INT_TO_LABEL = {
+    CRITICAL:'CRITICAL',
+    FATAL:'FATAL',
     ERROR:'ERROR',
     WARNING:'WARNING',
     IMPORTANT:'IMPORTANT',
@@ -41,7 +44,9 @@ def important(msg, *args, **kwargs):
     print_log(IMPORTANT, msg, *args, **kwargs)
 def info(msg, *args, **kwargs):
     print_log(INFO, msg, *args, **kwargs)
-
+def exception(e, msg=''):
+    print_log(ERROR, f'exc:{} {}', msg, e)
+    sys.print_exception(e)
 
 web_log_history = []
 web_log_frequency = {}
@@ -52,8 +57,12 @@ def print_log(level, msg, *args, **kwargs):
         else:
             print(msg)
     if WEB_LOG_LEVEL <= level:
-        time = utime.time()
-        web_log_history.append((time,level,msg,args,kwargs))
+        t = time.time()
+        web_log_history.append((t,level,msg,args,kwargs))
+        if msg not in web_log_frequency:
+            web_log_frequency[msg] = dict(count=0, level=level)
+        web_log_frequency[msg]['count'] += 1
+        web_log_frequency[msg]['last_seen'] = t
         purge_history()
 
 
@@ -72,4 +81,16 @@ def garbage_collect(threshold=MEM_FREE_THRESHOLD, force=False):
               orig_free=orig_free, now_free=now_free)
         return now_free
     return orig_free
+
+
+def stream_web_log():
+    for l in reversed(web_log_history):
+        msg = l[2].format(*l[3], **l[4])
+        yield '{}:{}: {}\n'.format(l[0], INT_TO_LABEL[l[1]], msg)
+
+
+def stream_web_log_frequency():
+    for k in sorted(web_log_frequency):
+        v = web_log_frequency[k]
+        yield '{}:{}: {}: {}\n'.format(v['last_seen'], INT_TO_LABEL[v['level']], k, v['count'])
 

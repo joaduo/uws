@@ -1,7 +1,5 @@
-import uasyncio
-import ujson
-import utime
-import sys
+import asyncio
+import json
 import log
 
 
@@ -20,6 +18,7 @@ PATCH = 'PATCH'
 DELETE = 'DELETE'
 DEFAULT_HEADERS = {'Access-Control-Allow-Origin': '*'}
 CHUNK_SIZE = 2048
+DEFAULT_AUTHENTICATED_METHODS = (POST,)
 
 
 def web_page(msg):
@@ -54,7 +53,7 @@ def jsondumps(o, depth=1):
         for s in _jsondumps_iter(o, depth):
             yield s
     else:
-        yield ujson.dumps(o)
+        yield json.dumps(o)
 
 
 def _jsondumps_iter(o, depth=1):
@@ -67,7 +66,7 @@ def _jsondumps_iter(o, depth=1):
             for s in jsondumps(v, depth):
                 yield s
         else:
-            yield ujson.dumps(v)
+            yield json.dumps(v)
         count += 1
         if lgth != count:
             yield ' ,'
@@ -80,13 +79,13 @@ def _jsondumps_dict(d, depth=1):
     count = 0
     lgth = len(d)
     for k,v in d.items():
-        yield ujson.dumps(k)
+        yield json.dumps(k)
         yield ' : '
         if depth:
             for s in jsondumps(v, depth):
                 yield s
         else:
-            yield ujson.dumps(v)
+            yield json.dumps(v)
         count += 1
         if lgth != count:
             yield ' ,'
@@ -242,7 +241,7 @@ class Request:
         ct = lch[b'content-type'].split(b';', 1)[0]
         try:
             if ct == b'application/json':
-                return ujson.loads(data)
+                return json.loads(data)
             elif ct == b'application/x-www-form-urlencoded':
                 return parse_query_string(data.decode())
             else:
@@ -287,57 +286,64 @@ class Response:
             await self.send(response(code, content_type, msg))
 
 
-DEFAULT_AUTHENTICATED_METHODS = (POST,)
-class Server:
-    class _decorator:
-        # Base class to later do @app.json() or @app.html() decorations
-        _endpoints = {}
-        def __init__(self, path=None,
-                           headers=DEFAULT_HEADERS,
-                           authenticated=DEFAULT_AUTHENTICATED_METHODS,
-                           **kwargs):
-            self.path = path
-            self.kwargs = dict(
+class Endpoint:
+    allowed = tuple(m.lower() for m in (GET, POST, PUT, PATCH, DELETE))
+    def __init__(self, 
+            endpoints,
+            path=None,
+            content_type='text/html',
+            headers=DEFAULT_HEADERS,
+            authenticated=DEFAULT_AUTHENTICATED_METHODS,
+            **kwargs
+            ):
+        self.endpoints = endpoints
+        self.path = path
+        self.kwargs = dict(
                     headers=headers,
-                    endpoint_type=self.__class__,
-                    content_type=self.content_type,
+                    content_type=content_type,
                     authenticated=authenticated,
                     **kwargs
                     )
-        def __call__(self, method):
-            path = self.path or '/' + method.__name__
-            self._endpoints[path] = dict(callback=method, kwargs=self.kwargs)
-            return method
+    def __call__(self, callback):
+        path = self.path or '/' + callback.__name__
+        if type(callback) == type(Endpoint):
+            # this is a class with one method per HTTP verb
+            callback = self.wrap_class(callback)
+        self.endpoints[path] = dict(callback=callback, kwargs=self.kwargs)
+        return callback
 
-    class json(_decorator):
-        content_type = 'application/json'
-        def __init__(self, path=None,
-                           headers=DEFAULT_HEADERS,
-                           authenticated=DEFAULT_AUTHENTICATED_METHODS,
-                           json_resp=True,
-                           json_depth=0,
-                           **kwargs
-                           ):
-            super().__init__(path=path,
-                             headers=headers,
-                             json_resp=json_resp,
-                             json_depth=json_depth,
-                             authenticated=authenticated,
-                             **kwargs
-                             )
+    def wrap_class(self, cls):
+        instance = cls()
+        def callback(method, payload, **params):
+            method = method.decode('utf8').lower()
+            if method not in self.allowed:
+                raise ValueError(f'method={method} not allowed')
+            attr = getattr(instance, method)
+            if method == 'get':
+                return attr(**params)
+            return attr(payload, **params)
+        return callback
 
-    class html(_decorator):
-        content_type = 'text/html'
 
-    class plain(_decorator):
-        content_type = 'text/plain'
+class ServerBase:
+    def __init__(self):
+        self.endpoints = {}
+    def decorate(self, content_type, path, kwargs):
+        return Endpoint(self.endpoints, path,
+                        content_type=content_type, 
+                        **kwargs)
+    def json(self, path=None, **kwargs):
+        return self.decorate('application/json', path, kwargs)
+    def html(self, path=None, **kwargs):
+        return self.decorate('text/html', path, kwargs)
+    def plain(self, path=None, **kwargs):
+        return self.decorate('text/plain', path, kwargs)
 
-    async def _default_method(self, v,req,**params):
-        return 'Not Found\n{}\n{}\n{}'.format(v, req, params)
 
-    static_path = None
-    static_files_replacements = {}
+class Plugin(ServerBase):
+    ...
 
+class Server(ServerBase):
     def __init__(self,
                  host='0.0.0.0',
                  port=80,
@@ -348,6 +354,7 @@ class Server:
                  static_files_replacements=None,
                  pre_request_hook=None
                  ):
+        ServerBase.__init__(self)
         self.host = host
         self.port = port
         self.backlog = backlog
@@ -364,10 +371,20 @@ class Server:
                                          status=404,
                                      ))
 
+    def mount(self, plugin:Plugin):
+        for path, e in plugin.endpoints.items():
+            if path in self.endpoints:
+                raise ValueError(f'Endpoint with path={path} already exist')
+            log.debug('mounting {} from plugin {}', path, plugin)
+            self.endpoints[path] = e
+
+    async def _default_method(self, v,req,**params):
+        return 'Not Found\n{}\n{}\n{}'.format(v, req, params)
+
     async def run(self):
         log.info('Opening address={host} port={port}.', host=self.host, port=self.port)
         self.conn_id = 0 #connections ids
-        self.server = await uasyncio.start_server(self.accept_conn, self.host, self.port, self.backlog)
+        self.server = await asyncio.start_server(self.accept_conn, self.host, self.port, self.backlog)
 
     async def accept_conn(self, sreader, swriter):
         self.conn_id += 1
@@ -395,7 +412,7 @@ class Server:
         except Exception as e:
             msg = 'Exception e={e} e={e!r} conn_id={conn_id}'.format(e=e, conn_id=conn_id)
             log.debug(msg)
-            sys.print_exception(e)
+            log.exception(e)
             await resp.send_error(500, 'text/html', web_page(msg))
         finally:
             await swriter.drain()
@@ -413,17 +430,18 @@ class Server:
 
     async def serve_static(self, req):
         await req.read_payload()
-        if file_exists(req.path):
+        path = req.path.lstrip('/')
+        if file_exists(path):
             content_type = 'text/html'
-            if req.path.endswith('.js'):
+            if path.endswith('.js'):
                 content_type = 'application/javascript'
-            return response(200, content_type, serve_file(req.path, self.static_files_replacements))
+            return response(200, content_type, serve_file(path, self.static_files_replacements))
         return response(404, 'text/html', web_page('404 Not Found'))
 
     async def serve_request(self, req:Request, resp:Response):
         if self.pre_request_hook:
             self.pre_request_hook()
-        endpoint = self._decorator._endpoints.get(req.path, self.default_endpoint)
+        endpoint = self.endpoints.get(req.path, self.default_endpoint)
         kwargs = endpoint['kwargs']
         if kwargs.get('classic'):
             endpoint['callback'](req, resp)
@@ -435,12 +453,10 @@ class Server:
                     raise UnauthorizedError('Unauthorized. Send {"auth_token":"<secret>", "payload": ...}')
                 req_payload = req_payload['payload']
             resp_payload = await endpoint['callback'](req.method, req_payload, **params)
-            if kwargs.get('json_resp'):
+            if kwargs['content_type'] ==  'application/json':
                 resp_payload = jsondumps(resp_payload, kwargs.get('json_depth', 0))
             return response(kwargs.get('status', 200),
                             kwargs['content_type'],
                             resp_payload,
                             headers=kwargs['headers'])
-
-
 

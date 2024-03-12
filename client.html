@@ -60,11 +60,26 @@
         return json
     }
 
+    async function getAPIText(endpoint){
+        let url = host + '/' + endpoint;
+        let headers =  {
+            'Content-type': 'text/plain'
+        };
+        let request = {
+            method:'GET',
+            headers
+        };
+        let page = await fetch(url, request);
+        return await page.text();
+    }
+
     createApp({
-      status: {name:''},
       log_level: '',
       token: auth_token,
       new_token: '',
+      logCfg: {},
+      logHistory: '',
+      webLogFrequency: '',
       async setToken(){
         await postJSON('token', this.new_token, this.token)
         this.token = this.new_token
@@ -76,25 +91,27 @@
       async getLevel(){
         this.log_level = await getJSON('log_level')
       },
-      async setStatus(){
-        this.status = await postJSON('status', this.status, this.token)
+      async setLogCfg(){
+        this.getLogCfg(await postJSON('logcfg', this.logCfg, this.token))
       },
-      async getStatus(){
-        this.status = await getJSON('status')
+      async getLogHistory(){
+        this.logHistory = await getAPIText('logs')
+        this.webLogFrequency = await getAPIText('log_freq')
+      },
+      async getLogCfg(cfg){
+        if(!cfg)
+            cfg = await getJSON('logcfg')
+        this.logCfg = cfg
       },
       async mounted(){
-        await this.getStatus()
         await this.getLevel()
+        await this.getLogCfg()
       },
     }).mount()
   </script>
 
   <div v-scope @vue:mounted='mounted'>
-    <p>
-      <input type='text' id='name' v-model='status.name'/> Status Name
-      <button id='name1'  class='btn' @click='getStatus()'>Get</button>
-      <button id='name2'  class='btn btn_stop' @click='setStatus()'>Set</button>
-    </p>
+
     <hr/>
     <p>
       <input type='text' id='log_level' v-model='log_level'/> Log Level
@@ -107,6 +124,22 @@
       <input type='text' id='new_token' v-model='new_token'/> New Token
       <button id='token1'  class='btn btn_stop' @click='setToken()'>Set</button>
     </p>
+
+    <hr/>
+    <h2>Log Cfg</h2>
+    <p><pre>CRITICAL=50 ERROR=40 WARNING=30 IMPORTANT=25 INFO=20 DEBUG=10</pre></p>
+    <p><input type='number' id='log_level' v-model='logCfg.log_level'/> console log level </p>
+    <p><input type='number' id='web_log_level' v-model='logCfg.web_log_level'/> web log level </p>
+    <p><input type='number' id='web_log_size' v-model='logCfg.web_log_size'/> log size </p>
+    <p><button id='setLogCfg' class='btn btn_stop' @click='setLogCfg()'>Set</button>
+    <button id='getLogCfg' class='btn' @click='getLogCfg()'>Get</button></p>
+    <p/>
+    <hr/>
+    <p><button id='logHistory' class='btn' @click='getLogHistory()'>Get Web Log</button></p>
+    <p><h2 v-if='logHistory'>Latest log</h2></p>
+    <p><pre>{{logHistory}}</pre></p>
+    <p><h2 v-if='webLogFrequency'>Frequency</h2></p>
+    <p><pre>{{webLogFrequency}}</pre></p>
   </div>
 
 </body>
