@@ -6,9 +6,8 @@ from plugins.include_plugin import include_plugin
 from plugins.mem_plugin import mem_plugin
 
 
-AUTH_TOKEN='MYTOKEN'
 app = Server(pages_path='/pages/',
-             auth_token=AUTH_TOKEN,
+             auth_token='MYTOKEN',
              port=8000,
              )
 
@@ -23,21 +22,20 @@ async def index():
 def main():
     log.LOG_LEVEL = log.INFO
     log.garbage_collect()
+    app.mount(log_plugin)
+    app.mount(include_plugin)
+    app.mount(mem_plugin)
     try:
-        app.mount(log_plugin)
-        app.mount(include_plugin)
-        app.mount(mem_plugin)
         asyncio.run(app.run())
-        loop = asyncio.get_event_loop()
-        loop.run_forever()
+        asyncio.get_event_loop().run_forever()
     except Exception as e:
         log.exception(e)
     finally:
         try:
             asyncio.run(app.close())
             _ = asyncio.new_event_loop()
-        except Exception as e:
-            print(e)
+        except Exception:
+            ...
 
 
 if __name__ == '__main__':
