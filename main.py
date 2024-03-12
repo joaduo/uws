@@ -7,7 +7,7 @@ from plugins.mem_plugin import mem_plugin
 
 
 AUTH_TOKEN='MYTOKEN'
-app = Server(static_path='/static/',
+app = Server(pages_path='/pages/',
              auth_token=AUTH_TOKEN,
              port=8000,
              )
@@ -16,8 +16,8 @@ app = Server(static_path='/static/',
 @app.html('/')
 @only_get
 async def index():
-    return serve_file('client.html', {'@=AUTH_TOKEN=@':'MYTOKEN',
-                                       '@=SERVER_ADDRESS=@':'',})
+    return serve_file('pages/client.html', {'@=AUTH_TOKEN=@':'MYTOKEN',
+                                            '@=SERVER_ADDRESS=@':'',})
 
 
 def main():

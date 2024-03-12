@@ -365,8 +365,8 @@ class Server(ServerBase):
                  backlog=5,
                  timeout=CONN_TIMEOUT,
                  auth_token='',
-                 static_path=None,
-                 static_files_replacements=None,
+                 pages_path=None,
+                 pages_replacements=None,
                  pre_request_hook=None
                  ):
         ServerBase.__init__(self)
@@ -375,8 +375,8 @@ class Server(ServerBase):
         self.backlog = backlog
         self.timeout = timeout
         self.auth_token = auth_token
-        self.static_path = static_path
-        self.static_files_replacements = static_files_replacements
+        self.pages_path = pages_path
+        self.pages_replacements = pages_replacements
         self.pre_request_hook = pre_request_hook
         self.default_endpoint = dict(callback=self._default_method,
                                      kwargs=dict(
@@ -412,7 +412,7 @@ class Server(ServerBase):
             await req.read_request_line()
             log.debug('request={request!r}, conn_id={conn_id}', request=req.path, conn_id=conn_id)
             try:
-                if self.static_path and req.path.startswith(self.static_path) and req.method == GET:
+                if self.pages_path and req.path.startswith(self.pages_path) and req.method == GET:
                     resp_gen = await self.serve_static(req)
                 else:
                     resp_gen = await self.serve_request(req, resp)
@@ -450,7 +450,7 @@ class Server(ServerBase):
             content_type = 'text/html'
             if path.endswith('.js'):
                 content_type = 'application/javascript'
-            return response(200, content_type, serve_file(path, self.static_files_replacements))
+            return response(200, content_type, serve_file(path, self.pages_replacements))
         return response(404, 'text/html', web_page('404 Not Found'))
 
     async def serve_request(self, req:Request, resp:Response):
