@@ -25,7 +25,7 @@ def only_get(callback):
     class wrapper:
         __name__ = callback.__name__
         def __call__(self, m, p, **params):
-            assert m == GET
+            assert m == GET, 'this is an only_get method'
             return callback(**params)
     return wrapper()
 
@@ -338,6 +338,7 @@ class Endpoint:
                 return attr(**params)
             return attr(payload, **params)
         return callback
+
 
 class ServerBase:
     def __init__(self):
