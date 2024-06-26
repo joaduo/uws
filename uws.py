@@ -18,7 +18,7 @@ PATCH = 'PATCH'
 DELETE = 'DELETE'
 DEFAULT_HEADERS = {'Access-Control-Allow-Origin': '*'}
 CHUNK_SIZE = 2048
-DEFAULT_AUTHENTICATED_METHODS = (POST,)
+DEFAULT_AUTHENTICATED_METHODS = (POST, PUT, PATCH, DELETE)
 
 
 def only_get(callback):
@@ -296,8 +296,8 @@ class Response:
             await self.send(response(code, content_type, msg))
 
 
+ALL_METHODS = (GET, POST, PUT, PATCH, DELETE)
 class Endpoint:
-    allowed = tuple(m.lower() for m in (GET, POST, PUT, PATCH, DELETE))
     def __init__(self, 
             endpoints,
             path=None,
@@ -305,6 +305,7 @@ class Endpoint:
             headers=DEFAULT_HEADERS,
             authenticated=DEFAULT_AUTHENTICATED_METHODS,
             is_async=True,
+            methods=ALL_METHODS,
             **kwargs
             ):
         self.endpoints = endpoints
@@ -314,24 +315,26 @@ class Endpoint:
                     content_type=content_type,
                     authenticated=authenticated,
                     is_async=is_async,
+                    methods=methods,
                     **kwargs
                     )
     def __call__(self, callback):
         path = self.path or '/' + callback.__name__
         if type(callback) == type(Endpoint):
             # this is a class with one method per HTTP verb
-            callback = self.wrap_class(callback)
+            callback = self.wrap_class(callback, self.kwargs['methods'])
         self.endpoints[path] = dict(callback=callback, kwargs=self.kwargs)
         return callback
 
-    def wrap_class(self, cls):
+    def wrap_class(self, cls, methods):
         instance = cls()
         def callback(method, payload, **params):
-            method = method.decode('utf8').lower()
-            if method not in self.allowed:
+            method = method.decode('utf8').upper()
+            if method not in methods:
                 raise ValueError(f'method={method} not allowed')
-            attr = getattr(instance, method)
-            if method == 'get':
+            attr = getattr(instance, method.lower(), getattr(instance, method, None))
+            assert attr, f'Method {method} for {instance} not implemented'
+            if method in (GET, DELETE):
                 return attr(**params)
             return attr(payload, **params)
         return callback
