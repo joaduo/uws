@@ -398,7 +398,7 @@ class Server(ServerBase):
     def mount(self, plugin:Plugin):
         for path, e in plugin.endpoints.items():
             if path in self.endpoints:
-                raise ValueError(f'Endpoint with path={path} already exist')
+                raise ValueError(f'Endpoint with path={path} already exists')
             log.debug('mounting {} from plugin {}', path, plugin)
             self.endpoints[path] = e
 
@@ -483,8 +483,10 @@ class Server(ServerBase):
         if self.pre_request_hook:
             self.pre_request_hook()
         endpoint = self.endpoints.get(req.path, self.default_endpoint)
+        # kwargs passed to the endpoint definition (unrelated to request params/data)
         kwargs = endpoint['kwargs']
         if kwargs.get('classic'):
+			# classic means they process the request themselves (advanced)
             endpoint['callback'](req, resp)
         else:
             req_payload = await req.read_payload() 
@@ -495,8 +497,10 @@ class Server(ServerBase):
                 req_payload = req_payload['payload']
             resp_payload = endpoint['callback'](req.method, req_payload, **params)
             if kwargs.get('is_async'):
+				# we can't distinguish generators from async functions (we declare explictly)
                 resp_payload = await resp_payload
             if kwargs.get('json_dumps'):
+				# declared as json endpoint, transparently translate
                 resp_payload = jsondumps(resp_payload, kwargs.get('json_depth', 0))
             return response(kwargs.get('status', 200),
                             kwargs['content_type'],
