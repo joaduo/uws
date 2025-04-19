@@ -2,7 +2,7 @@ from uws import Plugin, POST, only_get
 import log
 
 
-log_plugin = Plugin()
+log_plugin = Plugin(__name__)
 
 
 @log_plugin.json()

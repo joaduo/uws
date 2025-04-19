@@ -351,6 +351,8 @@ class Endpoint:
 class ServerBase:
     def __init__(self, namespace='', ns_sep='/'):
         self.endpoints = {}
+        if namespace.startswith('plugins.'):
+			namespace = namespace[len('plugins.'):]
         self.namespace = namespace
         if namespace:
             self.namespace += ns_sep

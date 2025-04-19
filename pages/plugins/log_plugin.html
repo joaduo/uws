@@ -1,43 +1,44 @@
   <script type="module">
     import { createApp } from '/pages/petite-vue-module.min.js'
 
-    createApp({
-      log_level: '',
-      token: auth_token,
-      new_token: '',
-      logCfg: {},
-      logHistory: '',
-      webLogFrequency: '',
-      async setToken(){
-        await postJSON('token', this.new_token, this.token)
-        this.token = this.new_token
-        this.new_token = ''
-      },
-      async setLevel(){
-        this.log_level = await postJSON('log_level', this.log_level, this.token)
-      },
-      async getLevel(){
-        this.log_level = await getJSON('log_level')
-      },
-      async setLogCfg(){
-        this.getLogCfg(await postJSON('logcfg', this.logCfg, this.token))
-      },
-      async getLogHistory(){
-        this.logHistory = await getAPIText('logs')
-        this.webLogFrequency = await getAPIText('log_freq')
-      },
-      async getLogCfg(cfg){
-        if(!cfg)
-            cfg = await getJSON('logcfg')
-        this.logCfg = cfg
-      },
-      async mounted(){
-        await this.getLevel()
-        await this.getLogCfg()
-      },
-    }).mount('#log_plugin');
-
-
+    (function(){
+      const NAMESPACE = '@=NAMESPACE=@'
+      createApp({
+        log_level: '',
+        token: auth_token,
+        new_token: '',
+        logCfg: {},
+        logHistory: '',
+        webLogFrequency: '',
+        async setToken(){
+          await postJSON('token', this.new_token, this.token)
+          this.token = this.new_token
+          this.new_token = ''
+        },
+        async setLevel(){
+          this.log_level = await postJSON(`${NAMESPACE}/log_level`, this.log_level, this.token)
+        },
+        async getLevel(){
+          this.log_level = await getJSON(`${NAMESPACE}/log_level`)
+        },
+        async setLogCfg(){
+          this.getLogCfg(await postJSON(`${NAMESPACE}/logcfg`, this.logCfg, this.token))
+        },
+        async getLogHistory(){
+          this.logHistory = await getAPIText(`${NAMESPACE}/logs`)
+          this.webLogFrequency = await getAPIText(`${NAMESPACE}/log_freq`)
+        },
+        async getLogCfg(cfg){
+          if(!cfg)
+              cfg = await getJSON(`${NAMESPACE}/logcfg`)
+          this.logCfg = cfg
+        },
+        async mounted(){
+          await this.getLevel()
+          await this.getLogCfg()
+        },
+      }).mount('#log_plugin');
+    })();
 
   </script>
 
@@ -67,8 +68,8 @@
     <p/>
     <hr/>
     <p><button id='logHistory' class='btn' @click='getLogHistory()'>Get Web Log</button></p>
-    <p><h2 v-if='logHistory'>Latest log</h2></p>
-    <p><pre>{{logHistory}}</pre></p>
     <p><h2 v-if='webLogFrequency'>Frequency</h2></p>
     <p><pre>{{webLogFrequency}}</pre></p>
+    <p><h2 v-if='logHistory'>Latest log</h2></p>
+    <p><pre>{{logHistory}}</pre></p>
   </div>
