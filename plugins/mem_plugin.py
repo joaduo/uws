@@ -2,7 +2,7 @@ from uws import Plugin, only_get
 import gc
 
 
-mem_plugin = Plugin()
+mem_plugin = Plugin('mem_plugin', '.')
 
 @mem_plugin.json()
 @only_get

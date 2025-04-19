@@ -5,7 +5,7 @@
       gc_mem: '',
       token: auth_token,
       async getMem(){
-        this.gc_mem = await getJSON('mem')
+        this.gc_mem = await getJSON('mem_plugin.mem')
       },
       async mounted(){
         await this.getMem()

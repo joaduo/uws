@@ -305,6 +305,7 @@ ALL_METHODS = (GET, POST, PUT, PATCH, DELETE)
 class Endpoint:
     def __init__(self, 
             endpoints,
+            namespace='',
             path=None,
             content_type='text/html',
             headers=DEFAULT_HEADERS,
@@ -314,6 +315,7 @@ class Endpoint:
             **kwargs
             ):
         self.endpoints = endpoints
+        self.namespace = namespace
         self.path = path
         self.kwargs = dict(
                     headers=headers,
@@ -324,11 +326,12 @@ class Endpoint:
                     **kwargs
                     )
     def __call__(self, callback):
-        path = self.path or '/' + callback.__name__
+        path = self.path or callback.__name__
+        path = self.namespace + path
         if type(callback) == type(Endpoint):
             # this is a class with one method per HTTP verb
             callback = self.wrap_class(callback, self.kwargs['methods'])
-        self.endpoints[path] = dict(callback=callback, kwargs=self.kwargs)
+        self.endpoints[path.strip('/')] = dict(callback=callback, kwargs=self.kwargs)
         return callback
 
     def wrap_class(self, cls, methods):
@@ -346,10 +349,15 @@ class Endpoint:
 
 
 class ServerBase:
-    def __init__(self):
+    def __init__(self, namespace='', ns_sep='/'):
         self.endpoints = {}
+        self.namespace = namespace
+        if namespace:
+            self.namespace += ns_sep
     def decorate(self, content_type, path, kwargs):
-        return Endpoint(self.endpoints, path,
+        return Endpoint(self.endpoints,
+                        self.namespace,
+                        path,
                         content_type=content_type, 
                         **kwargs)
     def json(self, path=None, **kwargs):
@@ -482,11 +490,11 @@ class Server(ServerBase):
     async def serve_request(self, req:Request, resp:Response):
         if self.pre_request_hook:
             self.pre_request_hook()
-        endpoint = self.endpoints.get(req.path, self.default_endpoint)
+        endpoint = self.endpoints.get(req.path.strip('/'), self.default_endpoint)
         # kwargs passed to the endpoint definition (unrelated to request params/data)
         kwargs = endpoint['kwargs']
         if kwargs.get('classic'):
-			# classic means they process the request themselves (advanced)
+            # classic means they process the request themselves (advanced)
             endpoint['callback'](req, resp)
         else:
             req_payload = await req.read_payload() 
@@ -497,10 +505,10 @@ class Server(ServerBase):
                 req_payload = req_payload['payload']
             resp_payload = endpoint['callback'](req.method, req_payload, **params)
             if kwargs.get('is_async'):
-				# we can't distinguish generators from async functions (we declare explictly)
+                # we can't distinguish generators from async functions (we declare explictly)
                 resp_payload = await resp_payload
             if kwargs.get('json_dumps'):
-				# declared as json endpoint, transparently translate
+                # declared as json endpoint, transparently translate
                 resp_payload = jsondumps(resp_payload, kwargs.get('json_depth', 0))
             return response(kwargs.get('status', 200),
                             kwargs['content_type'],
