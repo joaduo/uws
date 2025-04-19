@@ -9,7 +9,7 @@ include_plugin = Plugin()
 @include_plugin.javascript(is_async=False)
 def include(m, pl, path):
     if file_exists(path):
-        yield 'let content = '
+        yield '(function () {\nlet content = '
         first = True
         for chunk in yield_chunks(path):
             if not first:
@@ -17,5 +17,5 @@ def include(m, pl, path):
             yield json.dumps(chunk)
             first = False
         yield ';\n'
-        yield 'document.write(content);'
+        yield 'document.write(content);\n})();'
     yield ''

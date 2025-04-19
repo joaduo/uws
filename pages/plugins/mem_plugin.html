@@ -1,0 +1,26 @@
+    <script type="module">
+    import { createApp } from '/pages/petite-vue-module.min.js'
+
+    createApp({
+      gc_mem: '',
+      token: auth_token,
+      async getMem(){
+        this.gc_mem = await getJSON('mem')
+      },
+      async mounted(){
+        await this.getMem()
+      },
+    }).mount('#mem_plugin');
+
+
+
+  </script>
+
+  <div @vue:mounted='mounted' id='mem_plugin'>
+    <hr/>
+    <p>
+      <input type='text' id='gc_mem' v-model='gc_mem'/> Free Memory
+      <button id='mem1'  class='btn' @click='getMem()'>Get</button>
+    </p>
+    <hr/>
+  </div>

@@ -1,15 +1,18 @@
 import asyncio
 import json
 import log
+import re
 
 
 CONN_TIMEOUT=10
 STATUS_CODES = {
     200:'OK',
     302:'FOUND',
-    404:'NOT FOUND',
-    403:'FORBIDDEN',
+    400:'ERROR',
     401:'UNAUTHORIZED',
+    403:'FORBIDDEN',
+    404:'NOT FOUND',
+    413:'ERROR',
     500:'SERVER ERROR'}
 POST = 'POST'
 GET = 'GET'
@@ -175,12 +178,14 @@ class StopWebServer(Exception):
 
 
 class HTTPException(Exception):
-    def __init__(self, code=400):
+    def __init__(self, code=400, msg=''):
         self.code = code
+        self.msg = msg
 
 
 class UnauthorizedError(HTTPException):
-    pass
+    def __init__(self, code=401):
+        HTTPException.__init__(self, code)
 
 
 class Request:
@@ -204,7 +209,7 @@ class Request:
             break
         rl_frags = rl.decode('utf8').split()
         if len(rl_frags) != 3:
-            raise HTTPException(400)
+            raise HTTPException(400, 'incorrect frags: {}'.format(rl_frags))
         self.method = rl_frags[0]
         url_frags = rl_frags[1].split('?', 1)
         self.path = url_frags[0]
@@ -223,7 +228,7 @@ class Request:
                     break
                 frags = line.split(b':', 1)
                 if len(frags) != 2:
-                    raise HTTPException(400)
+                    raise HTTPException(400, 'incorrect header: {}'.format(frags))
                 if frags[0] not in exclude_headers:
                     self.headers[frags[0]] = frags[1].strip()
             self._headers_read = True
@@ -369,7 +374,7 @@ class Server(ServerBase):
                  backlog=5,
                  timeout=CONN_TIMEOUT,
                  auth_token='',
-                 pages_path=None,
+                 pages_path=None, #must be absolute and match also request's subpath
                  pages_replacements=None,
                  pre_request_hook=None
                  ):
@@ -416,8 +421,9 @@ class Server(ServerBase):
             await req.read_request_line()
             log.debug('request={request!r}, conn_id={conn_id}', request=req.path, conn_id=conn_id)
             try:
-                if self.pages_path and req.path.startswith(self.pages_path) and req.method == GET:
-                    resp_gen = await self.serve_static(req)
+                path = self.prepare_path(req.path)
+                if self.pages_path and path.startswith(self.pages_path) and req.method == GET:
+                    resp_gen = await self.serve_static(path, req)
                 else:
                     resp_gen = await self.serve_request(req, resp)
                 if resp_gen:
@@ -447,15 +453,31 @@ class Server(ServerBase):
         await self.server.wait_closed()
         log.info('Server closed.')
 
-    async def serve_static(self, req):
+    async def serve_static(self, path, req):
         await req.read_payload()
-        path = req.path.lstrip('/')
-        if file_exists(path):
+        if self.approve_path_string(path) and path.startswith(self.pages_path) and file_exists(path):
             content_type = 'text/html'
             if path.endswith('.js'):
                 content_type = 'application/javascript'
             return response(200, content_type, serve_file(path, self.pages_replacements))
         return response(404, 'text/html', web_page('404 Not Found'))
+
+    def prepare_path(self, path):
+        if not self.pages_path.startswith('/'):
+            path = path.lstrip('/')
+        npath = path
+        while '../' in npath or './' in npath:
+            npath = npath.replace('../', '/').replace('./', '/')
+        if path != npath:
+            log.debug('Cleaned relative path from {path} to {npath}', path=path, npath=npath)
+        return npath
+
+    def approve_path_string(self, path):
+        rex = r'[\-\/a-zA-Z0-9\.][\-\/a-zA-Z0-9\.]*'
+        m = re.match(rex, path)
+        if not m:
+            log.debug('{path} does not match static file regex {rex}', path=path, rex=rex)
+        return m
 
     async def serve_request(self, req:Request, resp:Response):
         if self.pre_request_hook:
