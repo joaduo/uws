@@ -328,10 +328,12 @@ class Endpoint:
     def __call__(self, callback):
         path = self.path or callback.__name__
         path = self.namespace + path
+        if not path.startswith('/'):
+            path = '/' + path
         if type(callback) == type(Endpoint):
             # this is a class with one method per HTTP verb
             callback = self.wrap_class(callback, self.kwargs['methods'])
-        self.endpoints[path.strip('/')] = dict(callback=callback, kwargs=self.kwargs)
+        self.endpoints[path] = dict(callback=callback, kwargs=self.kwargs)
         return callback
 
     def wrap_class(self, cls, methods):
@@ -349,13 +351,9 @@ class Endpoint:
 
 
 class ServerBase:
-    def __init__(self, namespace='', ns_sep='/'):
+    def __init__(self, namespace=''):
         self.endpoints = {}
-        if namespace.startswith('plugins.'):
-			namespace = namespace[len('plugins.'):]
         self.namespace = namespace
-        if namespace:
-            self.namespace += ns_sep
     def decorate(self, content_type, path, kwargs):
         return Endpoint(self.endpoints,
                         self.namespace,
@@ -374,7 +372,12 @@ class ServerBase:
 
 
 class Plugin(ServerBase):
-    ...
+    def __init__(self, namespace='', ns_sep='/'):
+        if namespace.startswith('plugins.'):
+            namespace = namespace.split('.')[-1]
+        if namespace:
+            namespace += ns_sep
+        super().__init__(namespace)
 
 
 class Server(ServerBase):
@@ -492,7 +495,7 @@ class Server(ServerBase):
     async def serve_request(self, req:Request, resp:Response):
         if self.pre_request_hook:
             self.pre_request_hook()
-        endpoint = self.endpoints.get(req.path.strip('/'), self.default_endpoint)
+        endpoint = self.endpoints.get(req.path, self.default_endpoint)
         # kwargs passed to the endpoint definition (unrelated to request params/data)
         kwargs = endpoint['kwargs']
         if kwargs.get('classic'):
