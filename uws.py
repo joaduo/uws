@@ -184,8 +184,14 @@ class HTTPException(Exception):
 
 
 class UnauthorizedError(HTTPException):
-    def __init__(self, code=401):
-        HTTPException.__init__(self, code)
+    def __init__(self, code=401, msg=''):
+        HTTPException.__init__(self, code, msg)
+
+
+class Redirect(HTTPException):
+    def __init__(self, location, code=302, msg=''):
+        HTTPException.__init__(self, code, msg)
+        self.location = location
 
 
 class Request:
@@ -294,16 +300,22 @@ class Response:
             return count
 
     async def send_error(self, code, content_type='text/plain', msg=''):
+        await self._send_exc(code, response(code, content_type, msg), msg)
+
+    async def send_redirect(self, code, location, msg='Failed redirect'):
+        await self._send_exc(code, redirect(location, code), msg)
+
+    async def _send_exc(self, code, content, msg):
         if self.began:
             msg = 'ERROR: {} {} {}'.format(code, STATUS_CODES[code], msg)
             await self.send(msg)
         else:
-            await self.send(response(code, content_type, msg))
+            await self.send(content)
 
 
 ALL_METHODS = (GET, POST, PUT, PATCH, DELETE)
 class Endpoint:
-    def __init__(self, 
+    def __init__(self,
             endpoints,
             namespace='',
             path=None,
@@ -358,7 +370,7 @@ class ServerBase:
         return Endpoint(self.endpoints,
                         self.namespace,
                         path,
-                        content_type=content_type, 
+                        content_type=content_type,
                         **kwargs)
     def json(self, path=None, **kwargs):
         kwargs.setdefault('json_dumps', True)
@@ -441,10 +453,10 @@ class Server(ServerBase):
                     resp_gen = await self.serve_request(req, resp)
                 if resp_gen:
                     await resp.send(resp_gen)
-            except UnauthorizedError as e:
-                await resp.send_error(401, 'text/html', web_page('{} {!r}'.format(e,e)))
+            except Redirect as e:
+                await resp.send_redirect(e.code, e.location)
             except HTTPException as e:
-                await resp.send_error(e.code, 'text/html', web_page('{} {!r}'.format(e,e)))
+                await resp.send_error(e.code, msg='{} {!r}'.format(e,e))
         except StopWebServer:
             raise
         except Exception as e:
@@ -502,7 +514,7 @@ class Server(ServerBase):
             # classic means they process the request themselves (advanced)
             endpoint['callback'](req, resp)
         else:
-            req_payload = await req.read_payload() 
+            req_payload = await req.read_payload()
             params = req.get_params()
             if req.method in kwargs.get('authenticated', tuple()):
                 if (req_payload or params).get('auth_token') != self.auth_token:
@@ -519,4 +531,3 @@ class Server(ServerBase):
                             kwargs['content_type'],
                             resp_payload,
                             headers=kwargs['headers'])
-
